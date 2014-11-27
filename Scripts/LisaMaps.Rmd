@@ -1,0 +1,263 @@
+---
+title: "LisaMaps"
+author: "mz"
+date: "Wednesday, November 26, 2014"
+font-family: serif
+output: html_document
+
+---
+First load all the required libraries:
+```{r, message=FALSE}
+library(spdep)
+library(RColorBrewer)
+library(classInt)
+library(rgdal)
+library(maptools)
+gpclibPermit()
+library(dplyr)
+library(vcd)
+oldpar <- par(no.readonly=TRUE)
+par(family = "serif", font = 5)
+```
+
+## Data Setup
+
+This example is demonstrated using England and Wales maps with two variables from the 2001 UK census Small area microdata collection. The shape file, a list of weights based on first order queen neighborhoods and the two variables are loaded here:
+
+```{r}
+load("../Data/EnglandWales.R")
+```
+
+
+If you want to use your own data, simply swap it here as appropriate:
+
+* a shape file to `shape`
+* a list of weights object to `list.of.weights`
+* and a single (sic!) vector variable or a single column data.frame to `mydata`
+And naturally make sure the data is in the same order as the shape polygon ;)
+
+
+
+```{r, cache=TRUE}
+shape <- shape
+list.of.weights <- lw.foq
+mydata <- data.frame(variable=cars.data)
+mydata <- data.frame(variable=distwork)
+rm(cars.data, shape, lw.foq, distwork)
+```
+
+
+The next bit sets up the data frame that will be used throughout, by calculating:
+
+* lagged variable values
+* z-scores and lagged z-scores
+* local moran stats = lisa
+* the significance values
+* and the quadrant of each observation (High/High or topright is 1, then clockwise)
+
+```{r cache=TRUE}
+lisa.data <-  mutate(mydata, 
+                     lagged = lag.listw(list.of.weights,variable),
+                     z = variable-mean(variable),
+                     z = z/sqrt((sum(z^2)/n())),
+                     laggedz = lag.listw(list.of.weights, z),
+                     lisa = localmoran(variable, list.of.weights, alternative="two.sided")[,1],
+                     sig = localmoran(variable, list.of.weights, alternative="two.sided")[,5],
+                     quadrant = ifelse(z >= 0, ifelse(laggedz > 0,1,2), ifelse(laggedz >= 0,4,3)))
+head(lisa.data)
+```
+
+## Palatte Functions
+
+We will be using several palettes in the Lisa Maps, the functions for which are defined as follows:
+
+#### Regular Colour Palette - For cloropleth map
+
+This palette takes the lisa.data dataframe prepared above. Other things that can be tweaked are self explanatory: 
+
+* `bin.n` is the number of bins;
+* `col.scheme` is selected from the RColorBrewer palettes (use `display.brewer.all()` to see the options); 
+* `style` is for classIntervals, choose from "fixed", "sd", "equal", "pretty", "quantile", "kmeans", "hclust", "bclust", "fisher", or "jenks";
+* `z-score` is logical, whether or not to use the raw variable or z-scores (this is only important for the legend, obviously doesn't affect the colour palette)
+
+
+```{r cache=TRUE}
+FunPalette <- function (df=lisa.data, bin.n=6, col.scheme="YlOrRd", style="sd", z.score=FALSE){
+  if (z.score == TRUE) {df <- lisa.data$z} else {df <- lisa.data$variable} 
+  bins <- classIntervals(df, bin.n, style=style)
+  pal <- brewer.pal(length(bins$brks)-1, col.scheme)
+  col <- findColours(bins, pal)
+  pal.names <- paste(round(bins$brks[-length(bins$brks)],2), 
+                     round(bins$brks[-1], 2), sep= " - ")
+  pal.n.from <- round(bins$brks[-length(bins$brks)],2)
+  pal.n.to <- round(bins$brks[-1],2)
+  return(list(col, pal, pal.names, pal.n.from, pal.n.to, bins$brks, z.score))
+}
+```
+
+#### 'Palette' of point shapes and sizes - For significances in Moran map
+
+This palette takes the lisa.data dataframe prepared above and returns point sizes and shapes for the map, as well as legend labels. 
+
+Simple adjustments can be made just by changing the scale factor, but of course if you want different significance bins, sizes and shapes these can be fixed inside the function as well. 
+
+```{r}
+FunSigSize <- function(df=lisa.data, scale=1) {
+  sigz <- df[,6]
+  bins <- c(0, 0.001, 0.005, 0.01, 0.05,  1 )
+  cex.legend <- c(2.60, 2.34, 1.95, 1.30, 0.91)*scale
+  pch.legend <- c(19, 19, 19, 19, 4)       # change this for different symbols
+  cexez <- cex.legend[findInterval(sigz ,bins, rightmost.closed=T)]
+  cex.names <- paste(round(bins[-length(bins)],4),"-",round(bins[-1],4))
+  pchz <- pch.legend[findInterval(sigz ,bins, rightmost.closed=T)]
+  return(list(cexez, cex.legend, cex.names, pchz, pch.legend,bins))
+}
+```  
+
+#### Palette for Local Moran's I 
+
+This palette determines the colours for each area based on it's Local Moran's I value AND the quadrant it is in. It takes again the lisa.data dataframe prepared above and returns a colour vector as well as other legend stuff. 
+
+* `steps` determines the number of colour steps within each subpalette;
+* `four.way` is logical which determines wheter each quadrant gets its own palette, or (default) whether positive values (HH & LL) get one and negative ones (HL & LH) get another;
+* `pal.XX` are RColorBrewer palettes (use `display.brewer.all()` to see the options);
+
+```{r}
+
+FunPaletteMoran <- function (df=lisa.data,
+                            steps = 3,
+                            four.way = FALSE,
+                            pal.hh = "PuBu", 
+                            pal.hl = "Oranges",
+                            pal.ll = "RdPu",
+                            pal.lh = "Greens"){
+  if (steps > 7) stop("Sorry, can't have more than seven steps !")
+  if (four.way == FALSE) {pal.ll <- pal.hh 
+                          pal.lh <- pal.hl}
+  bins.pos <- seq(0, max(df$lisa), length=steps+1)
+  bins.neg <- seq(min(df$lisa),0, length=steps+1)
+
+  pal.hh <- brewer.pal(steps+2, pal.hh)[-c(1:2)]
+  pal.hl <- rev(brewer.pal(steps+2, pal.hl)[-c(1:2)])
+  pal.ll <- brewer.pal(steps+2, pal.ll)[-c(1:2)]
+  pal.lh <- rev(brewer.pal(steps+2, pal.lh)[-c(1:2)])
+  df <- df %>%
+    mutate (int = ifelse(lisa >= 0, findInterval(lisa, bins.pos, rightmost.closed=TRUE), 
+                         findInterval(lisa, bins.neg, rightmost.closed=TRUE)),
+            colz = ifelse(quadrant==1, pal.hh[int], 
+                          ifelse(quadrant == 2, pal.hl[int],
+                                 ifelse(quadrant == 3, pal.ll[int], pal.lh[int]))))
+  pal.n.from <- c(round(bins.neg[-length(bins.neg)],2),round(bins.pos[-length(bins.pos)],2) )
+  pal.n.to <- c(round( bins.neg[-1],2), round( bins.pos[-1],2))
+  pal.names <- paste( pal.n.from, pal.n.to,sep= " - ")                        
+  return(list(df$colz, pal.hh, pal.hl, pal.ll, pal.lh, pal.names))
+}
+```
+
+## Legend Functions
+Although the legends can be generally done using the `legend()` function, the moran one, where you have four colour palettes is a bit trickier. Also, different positioning of legends on different devices can be tricky, so instead I've done these helper functions for legends, which can be placed in subplots using `par(fig)`. 
+
+```{r}
+FunLegend <- function(palette=FunPalette){
+  plot(c(0,1), c(0,1),  col = NA, ann = FALSE, axes = FALSE)
+  points(rep(0.3,length(palette[[2]])), 1/length(palette[[2]])*
+           seq(1, length(palette[[2]])),pch=15, col=palette[[2]], cex=2)   
+  points(rep(0.3,length(palette[[2]])),1/length(palette[[2]])*
+           seq(1, length(palette[[2]])),pch=0, lwd=1, cex=2)
+  text(rep(0.6,length(palette[[2]])), 1/length(palette[[2]])*
+         seq(1, length(palette[[2]])), palette[[3]])
+}
+
+FunLegendSig <- function(sizes=FunSigSize()){
+  par(mar=c(0,0,2,0)) 
+  plot(c(0,1), c(0,1),  col = NA, ann = FALSE, axes = FALSE)
+  title(main="Significance Levels", font.main=1, cex.main=1)
+  points(rep(0.3,length(sizes[[2]])), 1/length(sizes[[2]])*
+           seq(1, length(sizes[[2]])),pch=sizes[[5]], cex=sizes[[2]], col="gray", lwd=2)   
+  points(rep(0.3,length(sizes[[2]])), 1/length(sizes[[2]])*
+           seq(1, length(sizes[[2]])),  pch=c(rep(1,length(sizes[[5]])-1), NA),
+         cex=sizes[[2]][sizes[[5]]!=4], lwd=0.5)
+  text(rep(0.7,length(sizes[[2]])), 1/length(sizes[[2]])*
+         seq(1, length(sizes[[2]])), sizes[[3]])}
+
+FunLegendMoran <- function(palette=FunPaletteMoran()){
+  par(mar=c(0,0,2,0)) 
+  plot(c(0,1), c(0,1),  col = NA, ann = FALSE, axes = FALSE)
+  title(main="Local Moran's I", font.main=1, cex.main=1)
+  points(rep(0.3,2*length(palette[[2]])), 1/(2*length(palette[[2]]))*
+           seq(1, 2*length(palette[[2]])),pch=19,  col=c(palette[[3]], palette[[2]]), cex=1.5)
+  points(rep(0.3,2*length(palette[[2]])), 1/(2*length(palette[[2]]))*
+           seq(1, 2*length(palette[[2]])),  cex=1.5)
+  if (!identical(palette[[3]], palette[[5]])){
+  points(rep(0.2,2*length(palette[[2]])), 1/(2*length(palette[[2]]))*
+           seq(1, 2*length(palette[[2]])),pch=19,  col=c(palette[[5]], palette[[4]]), cex=1.5)
+  points(rep(0.2,2*length(palette[[2]])), 1/(2*length(palette[[2]]))*
+           seq(1, 2*length(palette[[2]])),  cex=1.5)}
+  text(rep(0.7,2*length(palette[[2]])), 1/(2*length(palette[[2]]))*
+         seq(1, 2*length(palette[[2]])), palette[[6]])
+}
+```
+
+
+## Moran Scatterplot
+
+Can be used independently, or called from FunLisaMap (see bellow). It takes again the lisa.data dataframe prepared above, as well as:
+
+* `z.score` - logical intidating whether to use the raw variable or z-scores
+* `palette` and
+* `sizes` are both automatically the moran pallete and size functions above, which can naturally be tweaked. 
+* `...` are extra parameters that can be passed on to `plot()`
+
+ToDo: Right now you can manually change inside the function if you want either:
+
+* the diagonal where x equals lagged x and the mean of x ploted on both axes or
+* the linear model plotted and the means of x and lagged(x) plotted on each axis.
+
+Vaule: For plotting legend convenience, the function returns the palettes used. 
+
+```{r}
+FunMoranScatterplot <- function(df=lisa.data, z.score=FALSE, 
+                                palette= FunPaletteMoran(),
+                                sizes = FunSigSize(),  ...) {  
+  if (z.score == TRUE) {x <- df$z
+                        lx <- df$laggedz
+                        xlab <- "z-score"
+                        ylab <- "lagged z-score"} else {
+                          x <- df$variable
+                          lx <- df$lagged
+                          xlab <- "variable"
+                          ylab <- "lagged variable"} 
+  plot(x, lx, col=palette[[1]], cex=sizes[[1]], pch=sizes[[4]], xlab=xlab, ylab=ylab, ...)
+  points(x[sizes[[4]]!=4], lx[sizes[[4]]!=4], cex=sizes[[1]][sizes[[4]]!=4])
+  abline(v= mean(x), lty=2, lwd=0.5)
+  ## option1? x=lx and mean(x) on both
+  abline(a=0, b=1, lwd=0.5) 
+  abline(h= mean(x), lty=2, lwd=0.5)  
+  ## option2? linear model and mean of lagged
+  #abline(lm(lx~x), lwd=0.5) 
+  #abline(h= mean(lx), lty=2, lwd=0.5)
+  return(list(palette, sizes))
+
+}
+```
+
+So here's an example of the Moran scatterplot
+
+```{r}
+oldpar <- par(no.readonly=TRUE)
+par(mar=c(5.1, 4.1, 4.1, 8.1))
+lgnd <- FunMoranScatterplot(z.score=TRUE, palette=FunPaletteMoran(four.way=TRUE, steps=4) )
+leftX <- 0.80 # position London Inset
+rightX <- 0.99
+bottomY <- 0.2
+topy <- 0.5
+par(fig=c(leftX,rightX,bottomY, topy), new =TRUE)
+FunLegendMoran(lgnd[[1]])
+bottomY <- 0.5
+topy <- 0.8
+par(fig=c(leftX,rightX,bottomY, topy), new =TRUE)
+FunLegendSig(lgnd[[2]])
+par(oldpar)
+
+
+```
