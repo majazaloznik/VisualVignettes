@@ -39,10 +39,10 @@ And naturally make sure the data is in the same order as the shape polygon ;)
 
 
 ```{r, cache=TRUE}
-shape <- shape
+shape <- shape.LA
 list.of.weights <- lw.foq
 mydata <- data.frame(variable=cars.data)
-mydata <- data.frame(variable=distwork)
+# mydata <- data.frame(variable=distwork)
 rm(cars.data, shape, lw.foq, distwork)
 ```
 
@@ -172,9 +172,9 @@ FunLegendSig <- function(sizes=FunSigSize()){
   par(mar=c(0,0,2,0)) 
   plot(c(0,1), c(0,1),  col = NA, ann = FALSE, axes = FALSE)
   title(main="Significance Levels", font.main=1, cex.main=1)
-  points(rep(0.3,length(sizes[[2]])), 1/length(sizes[[2]])*
+  points(rep(0.2,length(sizes[[2]])), 1/length(sizes[[2]])*
            seq(1, length(sizes[[2]])),pch=sizes[[5]], cex=sizes[[2]], col="gray", lwd=2)   
-  points(rep(0.3,length(sizes[[2]])), 1/length(sizes[[2]])*
+  points(rep(0.2,length(sizes[[2]])), 1/length(sizes[[2]])*
            seq(1, length(sizes[[2]])),  pch=c(rep(1,length(sizes[[5]])-1), NA),
          cex=sizes[[2]][sizes[[5]]!=4], lwd=0.5)
   text(rep(0.7,length(sizes[[2]])), 1/length(sizes[[2]])*
@@ -241,23 +241,76 @@ FunMoranScatterplot <- function(df=lisa.data, z.score=FALSE,
 }
 ```
 
-So here's an example of the Moran scatterplot
+So here's an example of the Moran scatterplot, using the four.way option as well as z-scores and with the associated legends along side. The variable is 
 
 ```{r}
 oldpar <- par(no.readonly=TRUE)
-par(mar=c(5.1, 4.1, 4.1, 8.1))
+par(mar=c(5.1, 4.1, 4.1, 9.1))
 lgnd <- FunMoranScatterplot(z.score=TRUE, palette=FunPaletteMoran(four.way=TRUE, steps=4) )
-leftX <- 0.80 # position London Inset
+leftX <- 0.80 # bottom legend
 rightX <- 0.99
-bottomY <- 0.2
+bottomY <- 0.1
 topy <- 0.5
 par(fig=c(leftX,rightX,bottomY, topy), new =TRUE)
 FunLegendMoran(lgnd[[1]])
-bottomY <- 0.5
-topy <- 0.8
+bottomY <- 0.5 # top legend
+topy <- 0.9
 par(fig=c(leftX,rightX,bottomY, topy), new =TRUE)
 FunLegendSig(lgnd[[2]])
 par(oldpar)
 
 
+```
+
+## Maps
+
+#### Regular cloropleth map of the variable (or z-scores), with inset, density plot and legend
+
+Takes again the lisa.data dataframe prepared above, as well as a spatialPolygon object and a regular palette from FunPalette. 
+
+The default inset is for London. The centering and size of the inset can be changed in the code:
+
+* `CoL is the center of the inset box
+* `h` and `w` are its height and width - aspect ratio is the same as the overall plot. So change the value 30 to another one for larger or smaller coverage. 
+* `leftX`, `rightX`, `bottomY` are the positions of the zoomed inset. Again this can be moved around, and it set to have the same aspect ratio as the overall plot. 
+
+The same principles aply to changing the size and position of the density distribution plot and the legend. 
+
+
+```{r}
+FunUKMap <- function(df=lisa.data, shape=shape.LA, palette=FunPalette()){
+  oldpar <- par(no.readonly=TRUE)
+  X11(width=10, height=7)  
+  par(mar=c(0,0,0,0)) 
+  plot(shape, col=palette[[1]])
+  par("usr")
+  # London inset, change CoL and w1, and h1 to suit
+  CoL <- coordinates(shape)[32,] # center on London City (00BK)
+  w1 = abs(par("usr")[1] - par("usr")[2])/30
+  h1 = abs(par("usr")[3] - par("usr")[4])/30
+  rect( CoL[1]-w1, CoL[2]-h1,CoL[1]+w1, CoL[2]+h1, lwd=2)
+  leftX <- 0.78 # position London Inset
+  rightX <- 0.99
+  bottomY <- 0.2
+  par(fig=c(leftX,rightX,bottomY, bottomY+rightX-leftX), new =TRUE)
+  plot(shape, col=palette[[1]], xlim=c(CoL[1]-w1, CoL[1]+w1),
+       ylim=c(CoL[2]-h1, CoL[2]+h1))
+  box(lwd=2)  
+  leftX <- 0 # position variable density distribution
+  rightX <- 0.25
+  bottomY <- 0.35
+  par(fig=c(leftX,rightX,bottomY, bottomY+rightX-leftX), new =TRUE,mar=c(2,1,0,0))
+  if (palette[[7]] == TRUE) {x <- df$z} else {x <- df$variable} 
+  plot(density(x, na.rm=TRUE), axes=FALSE, ann=FALSE, lwd=2)
+  axis(1)
+  abline(v=palette[[6]], col="red", lty=c(2,2,2,1,2,2,2))  
+  bottomY <- bottomY+rightX-leftX # position legend above dens.
+  par(fig=c(leftX,rightX,bottomY, bottomY+rightX-leftX),mar=c(0,0,0,0), new =TRUE)
+  FunLegend(palette)
+  par(oldpar)
+}
+```
+An example, where the only default changed is to use z-scores (hence the pretty legend, since the palette uses "sd" for the bins):
+```{r}
+FunUKMap(palette=FunPalette(z.score=TRUE))
 ```
