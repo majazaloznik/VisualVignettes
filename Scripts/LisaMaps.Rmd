@@ -1,13 +1,50 @@
 ---
 title: "LisaMaps"
-author: "mz"
-date: "Wednesday, November 26, 2014"
+author: "maja zaloznik"
 font-family: serif
 output: html_document
 
 ---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(cache=TRUE, cache.path = 'LisaMaps_cache/')
+
+```
+
+This is a write up of a set of functions written to create LISA maps - maps of Local Moran's I values (or other spatial autocorrelation indicators if you so wish) in a non-standard way. 
+
+The main contribution of these maps is that both the Moran's I values and their significances are plotted on a single map using poing shape/size in addition to colour palettes. 
+
+Additionally the maps incorporate a Moran's scatterplot, which can of course be used separately. 
+
+A final bonus is a mapping function for a simple cloropleth map that has a density plot subset. 
+
+The code here is completely self contained and has been tested with the example data for England and Wales and some UK census 2001 variables for demonstration. (There is also a quick example at the end with a map of Germany, just to test it works).
+
+The original .Rmd file for this, as well as a clean R file and the required data to run this example are all available at [https://github.com/majazaloznik/VisualVignettes](https://github.com/majazaloznik/VisualVignettes).
+
+For comments, suggestions, issues and bugs: <maja.zaloznik@gmail.com> or report an Issue on the [github repository](https://github.com/majazaloznik/VisualVignettes/issues).
+
+First written @ Max Planck Institute for Demographic Research, February 2012. Presented @ AQMEN, Glasgow, November 2014 as part of the Visual Vignettes talk (repository in progress).
+
+### Outline
+
+[Data Setup](#data-setup)
+
+[Palette Functions](#palette-functions)
+
+[Legend Functions](#legend-functions)
+
+[Moran Scatterplot](#moran-scatterplot)
+
+[Maps](#maps)
+
+[Bonus test example](#bonus-test-example)
+
+
+
 First load all the required libraries:
-```{r, message=FALSE}
+
+```{r, message=FALSE, results='hide', warning=FALSE}
 library(spdep)
 library(RColorBrewer)
 library(classInt)
@@ -15,7 +52,6 @@ library(rgdal)
 library(maptools)
 gpclibPermit()
 library(dplyr)
-library(vcd)
 oldpar <- par(no.readonly=TRUE)
 par(family = "serif", font = 5)
 ```
@@ -24,7 +60,7 @@ par(family = "serif", font = 5)
 
 This example is demonstrated using England and Wales maps with two variables from the 2001 UK census Small area microdata collection. The shape file, a list of weights based on first order queen neighborhoods and the two variables are loaded here:
 
-```{r}
+```{r, cache=TRUE}
 load("../Data/EnglandWales.R")
 ```
 
@@ -41,9 +77,7 @@ And naturally make sure the data is in the same order as the shape polygon ;)
 ```{r, cache=TRUE}
 shape <- shape.LA
 list.of.weights <- lw.foq
-mydata <- data.frame(variable=cars.data)
-# mydata <- data.frame(variable=distwork)
-rm(cars.data, shape, lw.foq, distwork)
+mydata <- data.frame(variable=distwork)
 ```
 
 
@@ -55,7 +89,7 @@ The next bit sets up the data frame that will be used throughout, by calculating
 * the significance values
 * and the quadrant of each observation (High/High or topright is 1, then clockwise)
 
-```{r cache=TRUE}
+```{r, cache=TRUE}
 lisa.data <-  mutate(mydata, 
                      lagged = lag.listw(list.of.weights,variable),
                      z = variable-mean(variable),
@@ -64,10 +98,9 @@ lisa.data <-  mutate(mydata,
                      lisa = localmoran(variable, list.of.weights, alternative="two.sided")[,1],
                      sig = localmoran(variable, list.of.weights, alternative="two.sided")[,5],
                      quadrant = ifelse(z >= 0, ifelse(laggedz > 0,1,2), ifelse(laggedz >= 0,4,3)))
-head(lisa.data)
 ```
 
-## Palatte Functions
+## Palette Functions
 
 We will be using several palettes in the Lisa Maps, the functions for which are defined as follows:
 
@@ -82,9 +115,9 @@ This palette takes the lisa.data dataframe prepared above. Other things that can
 
 
 ```{r cache=TRUE}
-FunPalette <- function (df=lisa.data, bin.n=6, col.scheme="YlOrRd", style="sd", z.score=FALSE){
+FunPalette <- function (df=lisa.data, bin.n=6, col.scheme="YlOrRd", style="pretty", z.score=FALSE){
   if (z.score == TRUE) {df <- lisa.data$z} else {df <- lisa.data$variable} 
-  bins <- classIntervals(df, bin.n, style=style)
+  bins <- classIntervals(df, n=bin.n, style=style)
   pal <- brewer.pal(length(bins$brks)-1, col.scheme)
   col <- findColours(bins, pal)
   pal.names <- paste(round(bins$brks[-length(bins$brks)],2), 
@@ -95,7 +128,7 @@ FunPalette <- function (df=lisa.data, bin.n=6, col.scheme="YlOrRd", style="sd", 
 }
 ```
 
-#### 'Palette' of point shapes and sizes - For significances in Moran map
+#### Palette of point shapes and sizes - For significances in Moran map
 
 This palette takes the lisa.data dataframe prepared above and returns point sizes and shapes for the map, as well as legend labels. 
 
@@ -136,7 +169,6 @@ FunPaletteMoran <- function (df=lisa.data,
                           pal.lh <- pal.hl}
   bins.pos <- seq(0, max(df$lisa), length=steps+1)
   bins.neg <- seq(min(df$lisa),0, length=steps+1)
-
   pal.hh <- brewer.pal(steps+2, pal.hh)[-c(1:2)]
   pal.hl <- rev(brewer.pal(steps+2, pal.hl)[-c(1:2)])
   pal.ll <- brewer.pal(steps+2, pal.ll)[-c(1:2)]
@@ -237,11 +269,10 @@ FunMoranScatterplot <- function(df=lisa.data, z.score=FALSE,
   #abline(lm(lx~x), lwd=0.5) 
   #abline(h= mean(lx), lty=2, lwd=0.5)
   return(list(palette, sizes))
-
 }
 ```
 
-So here's an example of the Moran scatterplot, using the four.way option as well as z-scores and with the associated legends along side. The variable is 
+So here's an example of the Moran scatterplot, using the four.way option as well as z-scores and with the associated legends along side. The variable is the percent of people with distance to work < 5km. 
 
 ```{r}
 oldpar <- par(no.readonly=TRUE)
@@ -251,6 +282,7 @@ leftX <- 0.80 # bottom legend
 rightX <- 0.99
 bottomY <- 0.1
 topy <- 0.5
+par(mar=c(5.1, 4.1, 4.1, 2.1))
 par(fig=c(leftX,rightX,bottomY, topy), new =TRUE)
 FunLegendMoran(lgnd[[1]])
 bottomY <- 0.5 # top legend
@@ -258,7 +290,6 @@ topy <- 0.9
 par(fig=c(leftX,rightX,bottomY, topy), new =TRUE)
 FunLegendSig(lgnd[[2]])
 par(oldpar)
-
 
 ```
 
@@ -270,7 +301,7 @@ Takes again the lisa.data dataframe prepared above, as well as a spatialPolygon 
 
 The default inset is for London. The centering and size of the inset can be changed in the code:
 
-* `CoL is the center of the inset box
+* `CoL` is the center of the inset box
 * `h` and `w` are its height and width - aspect ratio is the same as the overall plot. So change the value 30 to another one for larger or smaller coverage. 
 * `leftX`, `rightX`, `bottomY` are the positions of the zoomed inset. Again this can be moved around, and it set to have the same aspect ratio as the overall plot. 
 
@@ -278,14 +309,14 @@ The same principles aply to changing the size and position of the density distri
 
 
 ```{r}
-FunUKMap <- function(df=lisa.data, shape=shape.LA, palette=FunPalette()){
+FunCloroplethMap <- function(df=lisa.data, shp=shape, palette=FunPalette()){
   oldpar <- par(no.readonly=TRUE)
-  X11(width=10, height=7)  
+  # X11(width=10, height=7)  
   par(mar=c(0,0,0,0)) 
-  plot(shape, col=palette[[1]])
+  plot(shp, col=palette[[1]])
   par("usr")
   # London inset, change CoL and w1, and h1 to suit
-  CoL <- coordinates(shape)[32,] # center on London City (00BK)
+  CoL <- coordinates(shp)[32,] # center on London City (00BK)
   w1 = abs(par("usr")[1] - par("usr")[2])/30
   h1 = abs(par("usr")[3] - par("usr")[4])/30
   rect( CoL[1]-w1, CoL[2]-h1,CoL[1]+w1, CoL[2]+h1, lwd=2)
@@ -293,7 +324,7 @@ FunUKMap <- function(df=lisa.data, shape=shape.LA, palette=FunPalette()){
   rightX <- 0.99
   bottomY <- 0.2
   par(fig=c(leftX,rightX,bottomY, bottomY+rightX-leftX), new =TRUE)
-  plot(shape, col=palette[[1]], xlim=c(CoL[1]-w1, CoL[1]+w1),
+  plot(shp, col=palette[[1]], xlim=c(CoL[1]-w1, CoL[1]+w1),
        ylim=c(CoL[2]-h1, CoL[2]+h1))
   box(lwd=2)  
   leftX <- 0 # position variable density distribution
@@ -303,14 +334,149 @@ FunUKMap <- function(df=lisa.data, shape=shape.LA, palette=FunPalette()){
   if (palette[[7]] == TRUE) {x <- df$z} else {x <- df$variable} 
   plot(density(x, na.rm=TRUE), axes=FALSE, ann=FALSE, lwd=2)
   axis(1)
-  abline(v=palette[[6]], col="red", lty=c(2,2,2,1,2,2,2))  
+  abline(v=palette[[6]], col="red", lty=2) 
   bottomY <- bottomY+rightX-leftX # position legend above dens.
   par(fig=c(leftX,rightX,bottomY, bottomY+rightX-leftX),mar=c(0,0,0,0), new =TRUE)
   FunLegend(palette)
   par(oldpar)
 }
 ```
-An example, where the only default changed is to use z-scores (hence the pretty legend, since the palette uses "sd" for the bins):
+
+An example, where the only default changed is the number of bins:
 ```{r}
-FunUKMap(palette=FunPalette(z.score=TRUE))
+FunCloroplethMap(palette=FunPalette(bin.n=6))
+```
+
+#### Moran map, with inset, moran scatterplot and legends
+
+
+Takes again the lisa.data dataframe prepared above, as well as a spatialPolygon object. Then the special pallete and size/shape palette from the funcitons FunPaletteMoran and FunSigSize.
+
+The default inset is for London. The centering and size of the inset can be changed in the code:
+
+* `CoL is the center of the inset box
+* `h` and `w` are its height and width - aspect ratio is the same as the overall plot. So change the value 30 to another one for larger or smaller coverage. 
+* `leftX`, `rightX`, `bottomY` are the positions of the zoomed inset. Again this can be moved around, and it set to have the same aspect ratio as the overall plot. 
+
+The same principles aply to changing the size and position of the two legends and the scatterplot. 
+
+```{r}
+FunMoranMap <- function(df=lisa.data, shp=shape, palette=FunPaletteMoran(),
+                          sizes=FunSigSize(), z.score=FALSE){
+  oldpar <- par(no.readonly=TRUE)
+  #X11(width=10, height=7)  
+  par(mar=c(0,0,0,0)) 
+  plot(shp,  lwd=0.5)
+  points(coordinates(shp), col=palette[[1]], 
+         cex=sizes[[1]],pch=sizes[[4]], lwd=2 )
+  points(coordinates(shp)[sizes[[4]]!=4,], cex=sizes[[1]][sizes[[4]]!=4] )
+  par("usr")
+  # London inset, change CoL and w1, and h1 to suit
+  CoL <- coordinates(shp)[32,] # center on London City (00BK)
+  w1 = abs(par("usr")[1] - par("usr")[2])/30
+  h1 = abs(par("usr")[3] - par("usr")[4])/30
+  rect( CoL[1]-w1, CoL[2]-h1,CoL[1]+w1, CoL[2]+h1, lwd=2)
+  leftX <- 0.78 # position London Inset
+  rightX <- 0.99
+  bottomY <- 0.2
+  par(fig=c(leftX,rightX,bottomY, bottomY+rightX-leftX), new =TRUE)
+  plot(shape,  lwd=0.5,xlim=c(CoL[1]-w1, CoL[1]+w1),
+       ylim=c(CoL[2]-h1, CoL[2]+h1))
+  points(coordinates(shp), col=palette[[1]], 
+         cex=sizes[[1]],pch=sizes[[4]], lwd=2 )
+  points(coordinates(shp)[sizes[[4]]!=4,], cex=sizes[[1]][sizes[[4]]!=4] )
+  box(lwd=2)  
+  leftX <- 0 # position legend significances
+  rightX <- 0.34
+  bottomY <- 0.3
+  par(fig=c(leftX,rightX,bottomY, bottomY+rightX-leftX), new =TRUE,mar=c(2,1,0,0))
+  FunLegendSig(sizes)
+  bottomY <- bottomY+rightX-leftX# position legend Morans I
+  par(fig=c(leftX,rightX,bottomY, bottomY+rightX-leftX), new =TRUE,mar=c(2,1,0,0))
+  FunLegendMoran(palette)
+  par(oldpar)
+  leftX <- 0.70 # position moran scatterplot
+  rightX <- 0.99
+  bottomY <- 0.65
+  par(fig=c(leftX,rightX,bottomY, bottomY+rightX-leftX), new =TRUE,mar=c(0,0,0,0))
+  FunMoranScatterplot(df, palette=palette, sizes=sizes, z.score=z.score)
+  par(oldpar) 
+}
+
+```
+
+Let's test out the default version: 
+```{r}
+FunMoranMap()
+```
+
+OK, lets try out some other options:
+
+* another variable - proportion of people two or more cars
+* four way palette,
+* z-scores in the scatteplot, 
+* scale down the point sizes a bit
+
+
+```{r, cache=TRUE}
+mydata <- data.frame(variable=cars.data)
+lisa.data <-  mutate(mydata, 
+                     lagged = lag.listw(list.of.weights,variable),
+                     z = variable-mean(variable),
+                     z = z/sqrt((sum(z^2)/n())),
+                     laggedz = lag.listw(list.of.weights, z),
+                     lisa = localmoran(variable, list.of.weights, alternative="two.sided")[,1],
+                     sig = localmoran(variable, list.of.weights, alternative="two.sided")[,5],
+                     quadrant = ifelse(z >= 0, ifelse(laggedz > 0,1,2), ifelse(laggedz >= 0,4,3)))
+
+FunMoranMap(palette=FunPaletteMoran(four.way=TRUE ), sizes=FunSigSize(scale=0.8), z.score=TRUE)
+```
+
+### Bonus Test Example
+
+Just a quick test with some other data. Downloadint the shape file for Germany, quick fix of neighbourhood list, weights, and just a random normal variable to plot:
+```{r}
+temp <- tempfile()
+download.file("http://biogeo.ucdavis.edu/data/diva/adm/DEU_adm.zip",temp)
+unzip(temp)
+shape.DEU <- readOGR("DEU_adm3.shp", layer="DEU_adm3")
+unlink(temp)
+
+##create neighbourhood list and fix Ruegen
+shape.nb <- poly2nb(shape.DEU)
+which(card(shape.nb)==0)
+shape.nb[[250]] <- as.integer(245)
+shape.nb[245] <- list(sort(c(shape.nb[[245]], as.integer(250))))
+
+## create list of weights
+lw.DEU <- nb2listw(shape.nb)
+
+## Setup data
+shape <- shape.DEU
+list.of.weights <- lw.DEU
+set.seed(42)
+mydata <- data.frame(variable= rnorm(length(shape)))
+
+lisa.data <-  mutate(mydata, 
+                     lagged = lag.listw(list.of.weights,variable),
+                     z = variable-mean(variable),
+                     z = z/sqrt((sum(z^2)/n())),
+                     laggedz = lag.listw(list.of.weights, z),
+                     lisa = localmoran(variable, list.of.weights, alternative="two.sided")[,1],
+                     sig = localmoran(variable, list.of.weights, alternative="two.sided")[,5],
+                     quadrant = ifelse(z >= 0, ifelse(laggedz > 0,1,2), ifelse(laggedz >= 0,4,3)))
+
+FunCloroplethMap(palette=FunPalette(col.scheme="YlGnBu"))
+
+```
+
+OK, that seems to work fine, obviously I should comment out the part of the function for the inset, or change it to something more useful (ToDo). 
+
+And now for the Moran Plot, this time with some different palettes:
+
+```{r}
+FunMoranMap(palette=FunPaletteMoran(four.way=TRUE, steps=4, pal.hh = "RdBu", 
+                            pal.hl = "Greys",
+                            pal.ll = "BuPu",
+                            pal.lh = "YlOrBr"), sizes=FunSigSize(scale=0.8), z.score=TRUE)
 ```

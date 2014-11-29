@@ -1,3 +1,7 @@
+########################################
+## L I S A  M A P S
+########################################
+
 library(spdep)
 library(RColorBrewer)
 library(classInt)
@@ -5,8 +9,9 @@ library(rgdal)
 library(maptools)
 gpclibPermit()
 library(dplyr)
-library(vcd)
 oldpar <- par(no.readonly=TRUE)
+par(family = "serif", font = 5)
+
 #########################################
 ## Load data and Shape file
 ## For this example:
@@ -17,19 +22,16 @@ oldpar <- par(no.readonly=TRUE)
 ########################################
 load("Data/EnglandWales.R")
 
-
 ########################################
 ## TO CHANGE using own data:
 ## You need a SpatialPolygons object (with correctly named polygons - area ID)
 ## a verctor(or dataframe) of data of same length (also named with area ID)
 ## a listw object created from the SpatialPolygons object
 ########################################
-shape <- shape
+shape <- shape.LA
 list.of.weights <- lw.foq
-mydata <- data.frame(variable=cars.data)
 mydata <- data.frame(variable=distwork)
 
-rm(cars.data, LA.shape, lw.foq, distwork)
 #########################################
 ## Data frame setup
 #########################################
@@ -40,23 +42,24 @@ rm(cars.data, LA.shape, lw.foq, distwork)
 ## - lagged values
 ## - quadrant
 #########################################
-lisa.data <-  mutate(mydata, 
-                     lagged = lag.listw(list.of.weights,variable),
-                     z = variable-mean(variable),
-                     z = z/sqrt((sum(z^2)/n())),
-                     laggedz = lag.listw(list.of.weights, z),
-                     lisa = localmoran(variable, list.of.weights, alternative="two.sided")[,1],
-                     sig = localmoran(variable, list.of.weights, alternative="two.sided")[,5],
-                     quadrant = ifelse(z >= 0, ifelse(laggedz > 0,1,2), ifelse(laggedz >= 0,4,3)))
+FunLisaData <- function(mydata){
+  mutate(mydata, 
+         lagged = lag.listw(list.of.weights,variable),
+         z = variable-mean(variable),
+         z = z/sqrt((sum(z^2)/n())),
+         laggedz = lag.listw(list.of.weights, z),
+         lisa = localmoran(variable, list.of.weights, alternative="two.sided")[,1],
+         sig = localmoran(variable, list.of.weights, alternative="two.sided")[,5],
+         quadrant = ifelse(z >= 0, ifelse(laggedz > 0,1,2), ifelse(laggedz >= 0,4,3)))}   
 
-
+lisa.data <- FunLisaData(mydata)
 #########################################
 ## Regular Colour palette 
 #########################################
-FunPalette <- function (x=lisa.data, bin.n=6, nians="YlOrRd", style="sd", z.score=FALSE){
-  if (z.score == TRUE) {x <- lisa.data$z} else {x <- lisa.data$variable} 
-  bins <- classIntervals(x, bin.n, style=style)
-  pal <- brewer.pal(length(bins$brks)-1, nians)
+FunPalette <- function (df=lisa.data, bin.n=6, col.scheme="YlOrRd", style="pretty", z.score=FALSE){
+  if (z.score == TRUE) {df <- lisa.data$z} else {df <- lisa.data$variable} 
+  bins <- classIntervals(df, n=bin.n, style=style)
+  pal <- brewer.pal(length(bins$brks)-1, col.scheme)
   col <- findColours(bins, pal)
   pal.names <- paste(round(bins$brks[-length(bins$brks)],2), 
                      round(bins$brks[-1], 2), sep= " - ")
@@ -64,7 +67,6 @@ FunPalette <- function (x=lisa.data, bin.n=6, nians="YlOrRd", style="sd", z.scor
   pal.n.to <- round(bins$brks[-1],2)
   return(list(col, pal, pal.names, pal.n.from, pal.n.to, bins$brks, z.score))
 }
-plot(shape, col=FunPalette()[[1]])
 
 #########################################
 ## Significance: Function for Symbol Size 
@@ -80,7 +82,6 @@ plot(shape, col=FunPalette()[[1]])
 ## [6] bins  - return bins fyi
 ## [7] sigz - return significances fyi
 ##########################################
-
 FunSigSize <- function(df=lisa.data, scale=1) {
   sigz <- df[,6]
   bins <- c(0, 0.001, 0.005, 0.01, 0.05,  1 )
@@ -91,8 +92,6 @@ FunSigSize <- function(df=lisa.data, scale=1) {
   pchz <- pch.legend[findInterval(sigz ,bins, rightmost.closed=T)]
   return(list(cexez, cex.legend, cex.names, pchz, pch.legend,bins))
 }
-  
-FunSigSize()
 
 #########################################
 ## Colour palette centered on zero - 2-way or 4-way
@@ -110,7 +109,6 @@ FunSigSize()
 ## [6] bins  - return bins fyi
 ## [7] sigz - return significances fyi
 ########################################
-
 FunPaletteMoran <- function (df=lisa.data,
                             steps = 3,
                             four.way = FALSE,
@@ -123,7 +121,6 @@ FunPaletteMoran <- function (df=lisa.data,
                           pal.lh <- pal.hl}
   bins.pos <- seq(0, max(df$lisa), length=steps+1)
   bins.neg <- seq(min(df$lisa),0, length=steps+1)
-
   pal.hh <- brewer.pal(steps+2, pal.hh)[-c(1:2)]
   pal.hl <- rev(brewer.pal(steps+2, pal.hl)[-c(1:2)])
   pal.ll <- brewer.pal(steps+2, pal.ll)[-c(1:2)]
@@ -140,10 +137,10 @@ FunPaletteMoran <- function (df=lisa.data,
   return(list(df$colz, pal.hh, pal.hl, pal.ll, pal.lh, pal.names))
 }
 
+
 ###############################################
 ## Legends
 ##############################################
-
 FunLegend <- function(palette=FunPalette){
   plot(c(0,1), c(0,1),  col = NA, ann = FALSE, axes = FALSE)
   points(rep(0.3,length(palette[[2]])), 1/length(palette[[2]])*
@@ -151,16 +148,15 @@ FunLegend <- function(palette=FunPalette){
   points(rep(0.3,length(palette[[2]])),1/length(palette[[2]])*
            seq(1, length(palette[[2]])),pch=0, lwd=1, cex=2)
   text(rep(0.6,length(palette[[2]])), 1/length(palette[[2]])*
-         seq(1, length(palette[[2]])), palette[[3]])
-}
+         seq(1, length(palette[[2]])), palette[[3]])}
 
 FunLegendSig <- function(sizes=FunSigSize()){
   par(mar=c(0,0,2,0)) 
   plot(c(0,1), c(0,1),  col = NA, ann = FALSE, axes = FALSE)
-  title(main="Significance Levels", font.main=1)
-  points(rep(0.3,length(sizes[[2]])), 1/length(sizes[[2]])*
+  title(main="Significance Levels", font.main=1, cex.main=1)
+  points(rep(0.2,length(sizes[[2]])), 1/length(sizes[[2]])*
            seq(1, length(sizes[[2]])),pch=sizes[[5]], cex=sizes[[2]], col="gray", lwd=2)   
-  points(rep(0.3,length(sizes[[2]])), 1/length(sizes[[2]])*
+  points(rep(0.2,length(sizes[[2]])), 1/length(sizes[[2]])*
            seq(1, length(sizes[[2]])),  pch=c(rep(1,length(sizes[[5]])-1), NA),
          cex=sizes[[2]][sizes[[5]]!=4], lwd=0.5)
   text(rep(0.7,length(sizes[[2]])), 1/length(sizes[[2]])*
@@ -169,7 +165,7 @@ FunLegendSig <- function(sizes=FunSigSize()){
 FunLegendMoran <- function(palette=FunPaletteMoran()){
   par(mar=c(0,0,2,0)) 
   plot(c(0,1), c(0,1),  col = NA, ann = FALSE, axes = FALSE)
-  title(main="Local Moran's I", font.main=1)
+  title(main="Local Moran's I", font.main=1, cex.main=1)
   points(rep(0.3,2*length(palette[[2]])), 1/(2*length(palette[[2]]))*
            seq(1, 2*length(palette[[2]])),pch=19,  col=c(palette[[3]], palette[[2]]), cex=1.5)
   points(rep(0.3,2*length(palette[[2]])), 1/(2*length(palette[[2]]))*
@@ -191,16 +187,15 @@ FunLegendMoran <- function(palette=FunPaletteMoran()){
 ## and logical whether to use z.scores or raw variable values
 ## extra parameters get passed on to plot
 #######################################################
-
-FunMoranScatterplot <- function(lisa.data, z.score=FALSE, 
+FunMoranScatterplot <- function(df=lisa.data, z.score=FALSE, 
                                 palette= FunPaletteMoran(),
-                                sizes = FunSigSize(), ...) {  
-  if (z.score == TRUE) {x <- lisa.data$z
-                        lx <- lisa.data$laggedz
+                                sizes = FunSigSize(),  ...) {  
+  if (z.score == TRUE) {x <- df$z
+                        lx <- df$laggedz
                         xlab <- "z-score"
                         ylab <- "lagged z-score"} else {
-                          x <- lisa.data$variable
-                          lx <- lisa.data$lagged
+                          x <- df$variable
+                          lx <- df$lagged
                           xlab <- "variable"
                           ylab <- "lagged variable"} 
   plot(x, lx, col=palette[[1]], cex=sizes[[1]], pch=sizes[[4]], xlab=xlab, ylab=ylab, ...)
@@ -212,8 +207,8 @@ FunMoranScatterplot <- function(lisa.data, z.score=FALSE,
   ## option2? linear model and mean of lagged
   #abline(lm(lx~x), lwd=0.5) 
   #abline(h= mean(lx), lty=2, lwd=0.5)
+  return(list(palette, sizes))
 }
-FunMoranScatterplot(lisa.data)
 
 ################################################
 ## Regular cloropleth map of variable (or z-scores) with London Inset
@@ -229,15 +224,14 @@ FunMoranScatterplot(lisa.data)
 ## position variable density distribution
 ## position legend above dens.
 #################################################
-
-FunUKMap <- function(lisa.data, shape, palette=FunPalette()){
+FunCloroplethMap <- function(df=lisa.data, shp=shape, palette=FunPalette()){
   oldpar <- par(no.readonly=TRUE)
-  X11(width=10, height=7)  
+  # X11(width=10, height=7)  
   par(mar=c(0,0,0,0)) 
-  plot(shape, col=palette[[1]])
+  plot(shp, col=palette[[1]])
   par("usr")
   # London inset, change CoL and w1, and h1 to suit
-  CoL <- coordinates(shape)[32,] # center on London City (00BK)
+  CoL <- coordinates(shp)[32,] # center on London City (00BK)
   w1 = abs(par("usr")[1] - par("usr")[2])/30
   h1 = abs(par("usr")[3] - par("usr")[4])/30
   rect( CoL[1]-w1, CoL[2]-h1,CoL[1]+w1, CoL[2]+h1, lwd=2)
@@ -245,38 +239,49 @@ FunUKMap <- function(lisa.data, shape, palette=FunPalette()){
   rightX <- 0.99
   bottomY <- 0.2
   par(fig=c(leftX,rightX,bottomY, bottomY+rightX-leftX), new =TRUE)
-  plot(shape, col=palette[[1]], xlim=c(CoL[1]-w1, CoL[1]+w1),
+  plot(shp, col=palette[[1]], xlim=c(CoL[1]-w1, CoL[1]+w1),
        ylim=c(CoL[2]-h1, CoL[2]+h1))
   box(lwd=2)  
   leftX <- 0 # position variable density distribution
   rightX <- 0.25
   bottomY <- 0.35
   par(fig=c(leftX,rightX,bottomY, bottomY+rightX-leftX), new =TRUE,mar=c(2,1,0,0))
-  if (palette[[7]] == TRUE) {x <- lisa.data$z} else {x <- lisa.data$variable} 
+  if (palette[[7]] == TRUE) {x <- df$z} else {x <- df$variable} 
   plot(density(x, na.rm=TRUE), axes=FALSE, ann=FALSE, lwd=2)
   axis(1)
-  abline(v=palette[[6]], col="red", lty=c(2,2,2,1,2,2,2))  
+  abline(v=palette[[6]], col="red", lty=2) 
   bottomY <- bottomY+rightX-leftX # position legend above dens.
   par(fig=c(leftX,rightX,bottomY, bottomY+rightX-leftX),mar=c(0,0,0,0), new =TRUE)
   FunLegend(palette)
   par(oldpar)
-  
 }
 
-FunUKMap(lisa.data, shape, palette=FunPalette(z.score=TRUE))
 
-FunUKMoranMap <- function(df=lisa.data, shape, palette=FunPaletteMoran(four.way=TRUE),
-                          sizes=FunSigSize()){
+################################################
+## LISA MAP  with London Inset, scatterplot and legends
+################################################
+## Takes dataframe "lisa.data" created above
+## and shape SpatialPolygon
+## and  palette from FunPaletteMoran() and size pallete from FunSigSize()
+################################################
+## CHANGE logical in FunPaletteMoran() to switch to z.scores in scatterplot
+## Default inset centered on London City, otherwise change
+## Depending on your map shape and device size, CHANGE also
+## position of Inset
+## position of both legend
+#################################################
+FunMoranMap <- function(df=lisa.data, shp=shape, palette=FunPaletteMoran(),
+                          sizes=FunSigSize(), z.score=FALSE){
   oldpar <- par(no.readonly=TRUE)
   #X11(width=10, height=7)  
   par(mar=c(0,0,0,0)) 
-  plot(shape,  lwd=0.5)
-  points(coordinates(shape), col=palette[[1]], 
+  plot(shp,  lwd=0.5)
+  points(coordinates(shp), col=palette[[1]], 
          cex=sizes[[1]],pch=sizes[[4]], lwd=2 )
-  points(coordinates(shape)[sizes[[4]]!=4,], cex=sizes[[1]][sizes[[4]]!=4] )
+  points(coordinates(shp)[sizes[[4]]!=4,], cex=sizes[[1]][sizes[[4]]!=4] )
   par("usr")
   # London inset, change CoL and w1, and h1 to suit
-  CoL <- coordinates(shape)[32,] # center on London City (00BK)
+  CoL <- coordinates(shp)[32,] # center on London City (00BK)
   w1 = abs(par("usr")[1] - par("usr")[2])/30
   h1 = abs(par("usr")[3] - par("usr")[4])/30
   rect( CoL[1]-w1, CoL[2]-h1,CoL[1]+w1, CoL[2]+h1, lwd=2)
@@ -286,12 +291,12 @@ FunUKMoranMap <- function(df=lisa.data, shape, palette=FunPaletteMoran(four.way=
   par(fig=c(leftX,rightX,bottomY, bottomY+rightX-leftX), new =TRUE)
   plot(shape,  lwd=0.5,xlim=c(CoL[1]-w1, CoL[1]+w1),
        ylim=c(CoL[2]-h1, CoL[2]+h1))
-  points(coordinates(shape), col=palette[[1]], 
+  points(coordinates(shp), col=palette[[1]], 
          cex=sizes[[1]],pch=sizes[[4]], lwd=2 )
-  points(coordinates(shape)[sizes[[4]]!=4,], cex=sizes[[1]][sizes[[4]]!=4] )
+  points(coordinates(shp)[sizes[[4]]!=4,], cex=sizes[[1]][sizes[[4]]!=4] )
   box(lwd=2)  
   leftX <- 0 # position legend significances
-  rightX <- 0.30
+  rightX <- 0.34
   bottomY <- 0.3
   par(fig=c(leftX,rightX,bottomY, bottomY+rightX-leftX), new =TRUE,mar=c(2,1,0,0))
   FunLegendSig(sizes)
@@ -303,10 +308,18 @@ FunUKMoranMap <- function(df=lisa.data, shape, palette=FunPaletteMoran(four.way=
   rightX <- 0.99
   bottomY <- 0.65
   par(fig=c(leftX,rightX,bottomY, bottomY+rightX-leftX), new =TRUE,mar=c(0,0,0,0))
-  FunMoranScatterplot(df, palette=palette, sizes=sizes)
-  par(oldpar)
-  
+  FunMoranScatterplot(df, palette=palette, sizes=sizes, z.score=z.score)
+  par(oldpar) 
 }
-  
-FunUKMoranMap(lisa.data, shape, palette=FunPaletteMoran(four.way=TRUE))
+
+
+##############################################
+## Some examples
+##############################################
+FunCloroplethMap()
+FunMoranMap()
+
+mydata <- data.frame(variable=cars.data)
+lisa.data <-  FunLisaData(mydata)
+FunMoranMap(palette=FunPaletteMoran(four.way=TRUE ), sizes=FunSigSize(scale=0.8), z.score=TRUE)
 
