@@ -31,26 +31,27 @@ Lcoh <- Lexis( entry = list( CT=en ),
 # lexis1
 plot( Lcoh, grid=list(seq(1920,2000,10), seq(0,80,10)), col="black", lwd=2,
       xlab="Calendar time", ylab="Age")
-# dev.copy2eps(file="../../Presentation/figures/lexis01.eps")
+dev.copy2eps(file="Figures/lexis01.eps")
 
 # lexis2
 plot( Lcoh, grid=list(seq(1920,2000,10), seq(0,80,10)), col="black", lwd=2,
       xlab="Calendar time", ylab="Age")
 rect(1980,0,1990,par("usr")[4], col="gray90", border="black" )
 lines(Lcoh,col="black", lwd=2)
-# dev.copy2eps(file="../../Presentation/figures/lexis02.eps")
+dev.copy2eps(file="Figures/lexis02.eps")
 
 # lexis3
 plot( Lcoh, grid=list(seq(1920,2000,10), seq(0,80,10)), col="black", lwd=2,
       xlab="Calendar time", ylab="Age")
 rect(par("usr")[1],50,par("usr")[2],60, col="gray90", border="black" )
 lines(Lcoh,col="black", lwd=2)
-# dev.copy2eps(file="../../Presentation/figures/lexis03.eps")
+dev.copy2eps(file="Figures/lexis03.eps")
 
 # lexis4
-plot( Lcoh, grid=list(seq(1920,2000,10), seq(0,80,10)), col="black", lwd=2)
+plot( Lcoh, grid=list(seq(1920,2000,10), seq(0,80,10)), col="black", lwd=2,
+      xlab="Calendar time", ylab="Age")
 polygon(c(1940,1950,par("usr")[2], par("usr")[2]), 
         c(0,0,par("usr")[2]-1950,par("usr")[2]-1940),
         col="gray90")
 lines(Lcoh,col="black", lwd=2)
-# dev.copy2eps(file="../../Presentation/figures/lexis04.eps")
+dev.copy2eps(file="Figures/lexis04.eps")
